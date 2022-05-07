@@ -1,0 +1,7 @@
+[[disallowed-methods]]
+path = 'std::option::Option::unwrap'
+reason = 'consider providing context with std::option::Option::expect'
+
+[[disallowed-methods]]
+path = 'std::result::Result::unwrap'
+reason = 'consider providing context with std::result::Result::expect'
