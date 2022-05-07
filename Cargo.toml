@@ -1,0 +1,11 @@
+[package]
+name = "dusb"
+version = "0.1.0"
+authors = ["kit <kit@hastur.io>"]
+edition = "2021"
+description = "An interface for USB"
+readme = "README.md"
+repository = "https://github.com/kit-981/dusb"
+license = "GPL-3.0-or-later"
+keywords = ["usb"]
+categories = ["API bindings", "Asynchronous"]
