@@ -6,6 +6,14 @@ use std::{
     num::{NonZeroU16, NonZeroU8},
 };
 
+pub trait Descriptor {
+    /// Identifies the descriptor.
+    const TYPE: u8;
+
+    /// Returns the length of the descriptor in bytes when serialised.
+    fn length(&self) -> NonZeroU8;
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct ReleaseNumber {
     pub major: u8,
@@ -90,6 +98,16 @@ pub struct Device {
     pub nconfigurations: NonZeroU8,
 }
 
+impl Descriptor for Device {
+    const TYPE: u8 = 1;
+
+    #[inline]
+    #[must_use]
+    fn length(&self) -> NonZeroU8 {
+        unsafe { NonZeroU8::new_unchecked(18) }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Configuration {
     /// Specifies the total length of the configuration. This length is the combined length of the
@@ -112,6 +130,16 @@ pub struct Configuration {
     pub maximum_power: u8,
 }
 
+impl Descriptor for Configuration {
+    const TYPE: u8 = 2;
+
+    #[inline]
+    #[must_use]
+    fn length(&self) -> NonZeroU8 {
+        unsafe { NonZeroU8::new_unchecked(9) }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Interface {
     /// Identifies the interface.
@@ -124,6 +152,16 @@ pub struct Interface {
     pub functionality: Option<FunctionalityIdentifier>,
     /// Specifies the index of the string descriptor that describes the interface.
     pub index: Option<NonZeroU8>,
+}
+
+impl Descriptor for Interface {
+    const TYPE: u8 = 4;
+
+    #[inline]
+    #[must_use]
+    fn length(&self) -> NonZeroU8 {
+        unsafe { NonZeroU8::new_unchecked(9) }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -183,6 +221,16 @@ pub struct Endpoint {
     pub kind: EndpointKind,
 }
 
+impl Descriptor for Endpoint {
+    const TYPE: u8 = 5;
+
+    #[inline]
+    #[must_use]
+    fn length(&self) -> NonZeroU8 {
+        unsafe { NonZeroU8::new_unchecked(7) }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum StringHeaderLanguage {
     Known(Language),
@@ -192,5 +240,27 @@ pub enum StringHeaderLanguage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StringHeader {
     /// Defines the set of supported languages.
-    pub languages: HashSet<StringHeaderLanguage>,
+    languages: HashSet<StringHeaderLanguage>,
+}
+
+impl StringHeader {
+    #[inline]
+    #[must_use]
+    pub fn languages(&self) -> &HashSet<StringHeaderLanguage> {
+        &self.languages
+    }
+}
+
+impl Descriptor for StringHeader {
+    const TYPE: u8 = 3;
+
+    #[inline]
+    #[must_use]
+    fn length(&self) -> NonZeroU8 {
+        unsafe {
+            NonZeroU8::new_unchecked(
+                u8::try_from(2 + (2 * self.languages.len())).unwrap_or_else(|_| unreachable!()),
+            )
+        }
+    }
 }
