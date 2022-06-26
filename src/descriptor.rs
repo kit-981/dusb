@@ -13,7 +13,7 @@ pub trait Descriptor {
     /// Returns the length of the descriptor in bytes when encoded.
     fn length(&self) -> NonZeroU8;
 
-    /// Returns the descriptor encoded as bytes.
+    /// Encodes the descriptor into the buffer.
     fn encode(&self, buf: &mut impl BufMut);
 }
 
