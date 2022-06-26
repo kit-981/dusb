@@ -9,3 +9,6 @@ repository = "https://github.com/kit-981/dusb"
 license = "GPL-3.0-or-later"
 keywords = ["usb"]
 categories = ["API bindings", "Asynchronous"]
+
+[dependencies]
+bytes = "1.1.0"

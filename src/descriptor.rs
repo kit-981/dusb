@@ -1,4 +1,4 @@
-use crate::language::Language;
+use bytes::BufMut;
 use std::{
     collections::HashSet,
     error::Error,
@@ -10,8 +10,11 @@ pub trait Descriptor {
     /// Identifies the descriptor.
     const TYPE: u8;
 
-    /// Returns the length of the descriptor in bytes when serialised.
+    /// Returns the length of the descriptor in bytes when encoded.
     fn length(&self) -> NonZeroU8;
+
+    /// Returns the descriptor encoded as bytes.
+    fn encode(&self, buf: &mut impl BufMut);
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -19,6 +22,14 @@ pub struct ReleaseNumber {
     pub major: u8,
     pub minor: u8,
     pub subminor: u8,
+}
+
+impl ReleaseNumber {
+    #[inline]
+    #[must_use]
+    pub const fn bcd(&self) -> u16 {
+        ((self.major as u16) << 8) | ((self.minor as u16) << 4) | (self.subminor as u16)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -66,6 +77,12 @@ impl EndpointZeroMaximumPacketSize {
     }
 }
 
+impl From<EndpointZeroMaximumPacketSize> for u8 {
+    fn from(size: EndpointZeroMaximumPacketSize) -> Self {
+        size.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct FunctionalityIdentifier {
     pub class: u8,
@@ -106,6 +123,31 @@ impl Descriptor for Device {
     fn length(&self) -> NonZeroU8 {
         unsafe { NonZeroU8::new_unchecked(18) }
     }
+
+    fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u8(self.length().get());
+        buf.put_u8(Self::TYPE);
+        buf.put_u16(self.usb_release.bcd());
+
+        if let Some(functionality) = self.functionality {
+            buf.put_u8(functionality.class);
+            buf.put_u8(functionality.sub_class);
+            buf.put_u8(functionality.protocol);
+        } else {
+            buf.put_u8(0);
+            buf.put_u8(0);
+            buf.put_u8(0);
+        }
+
+        buf.put_u8(u8::from(self.maximum_packet_size));
+        buf.put_u16(self.vendor);
+        buf.put_u16(self.product);
+        buf.put_u16(self.device_release.bcd());
+        buf.put_u8(self.imanufacturer.map_or(0, NonZeroU8::get));
+        buf.put_u8(self.iproduct.map_or(0, NonZeroU8::get));
+        buf.put_u8(self.iserial.map_or(0, NonZeroU8::get));
+        buf.put_u8(self.nconfigurations.get());
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -138,6 +180,32 @@ impl Descriptor for Configuration {
     fn length(&self) -> NonZeroU8 {
         unsafe { NonZeroU8::new_unchecked(9) }
     }
+
+    fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u8(self.length().get());
+        buf.put_u8(Self::TYPE);
+        buf.put_u16(self.total_length.get());
+        buf.put_u8(self.ninterfaces.get());
+        buf.put_u8(self.value);
+        buf.put_u8(self.iconfiguration.map_or(0, NonZeroU8::get));
+
+        let mut attributes = 0;
+
+        if self.is_bus_powered {
+            attributes |= 1 << 7;
+        }
+
+        if self.is_self_powered {
+            attributes |= 1 << 6;
+        }
+
+        if self.is_remote_wakeup_supported {
+            attributes |= 1 << 5;
+        }
+
+        buf.put_u8(attributes);
+        buf.put_u8(self.maximum_power);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -161,6 +229,26 @@ impl Descriptor for Interface {
     #[must_use]
     fn length(&self) -> NonZeroU8 {
         unsafe { NonZeroU8::new_unchecked(9) }
+    }
+
+    fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u8(self.length().get());
+        buf.put_u8(Self::TYPE);
+        buf.put_u8(self.number);
+        buf.put_u8(self.alternate_setting);
+        buf.put_u8(self.nendpoints);
+
+        if let Some(functionality) = self.functionality {
+            buf.put_u8(functionality.class);
+            buf.put_u8(functionality.sub_class);
+            buf.put_u8(functionality.protocol);
+        } else {
+            buf.put_u8(0);
+            buf.put_u8(0);
+            buf.put_u8(0);
+        }
+
+        buf.put_u8(self.index.map_or(0, NonZeroU8::get));
     }
 }
 
@@ -229,26 +317,18 @@ impl Descriptor for Endpoint {
     fn length(&self) -> NonZeroU8 {
         unsafe { NonZeroU8::new_unchecked(7) }
     }
-}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum StringHeaderLanguage {
-    Known(Language),
-    Unknown(u16),
+    fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u8(self.length().get());
+        buf.put_u8(Self::TYPE);
+        buf.put_u8(self.number);
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StringHeader {
     /// Defines the set of supported languages.
-    languages: HashSet<StringHeaderLanguage>,
-}
-
-impl StringHeader {
-    #[inline]
-    #[must_use]
-    pub fn languages(&self) -> &HashSet<StringHeaderLanguage> {
-        &self.languages
-    }
+    pub languages: HashSet<u16>,
 }
 
 impl Descriptor for StringHeader {
@@ -261,6 +341,15 @@ impl Descriptor for StringHeader {
             NonZeroU8::new_unchecked(
                 u8::try_from(2 + (2 * self.languages.len())).unwrap_or_else(|_| unreachable!()),
             )
+        }
+    }
+
+    fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u8(self.length().get());
+        buf.put_u8(Self::TYPE);
+
+        for language in self.languages.iter().copied() {
+            buf.put_u16(language);
         }
     }
 }
